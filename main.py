@@ -2,7 +2,7 @@ from Bio import Entrez
 import datetime
 
 # Configurações
-Entrez.email = "SEU_EMAIL_AQUI"  # coloque seu email (obrigatório pela API)
+Entrez.email = "vitorgabriel03@hotmail.com"  # coloque seu email (obrigatório pela API)
 TERMO = '("pediatric intensive care" OR "neonatal intensive care") AND ("critically ill" OR sepsis)'
 HOJE = datetime.date.today()
 ONTEM = HOJE - datetime.timedelta(days=1)
