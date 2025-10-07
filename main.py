@@ -2,12 +2,29 @@ from Bio import Entrez
 import datetime
 import requests
 import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 Entrez.email = os.getenv("NCBI_EMAIL")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ----- Configuração da busca -----
+# ---- CONFIGURAÇÃO GOOGLE SHEETS ----
+SHEET_NAME = "Assinantes_PubMed"
+
+def get_assinantes():
+    creds_json = os.getenv("GOOGLE_CREDENTIALS")
+    if not creds_json:
+        raise RuntimeError("Credenciais do Google não encontradas.")
+    import json
+    creds_dict = json.loads(creds_json)
+    scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    gc = gspread.authorize(creds)
+    sheet = gc.open(SHEET_NAME).sheet1
+    rows = sheet.get_all_records()
+    return [str(r["telegram_id"]) for r in rows if r.get("telegram_id")]
+
+# ---- CONFIGURAÇÃO PUBMED ----
 TERMO = (
     '("Intensive Care Units, Pediatric"[MeSH Terms] OR "Intensive Care Units, Neonatal"[MeSH Terms]) '
     'AND ("Critical Illness"[MeSH Terms] OR "Sepsis"[MeSH Terms] OR "Multiple Organ Failure"[MeSH Terms])'
@@ -53,23 +70,20 @@ def traduzir_para_pt(texto):
     except:
         return texto
 
-def enviar_telegram(msg):
+def enviar_telegram(chat_id, msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     requests.post(
         url,
-        json={
-            "chat_id": CHAT_ID,
-            "text": msg,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": True
-        },
+        json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown", "disable_web_page_preview": True},
         timeout=30
     ).raise_for_status()
 
 if __name__ == "__main__":
+    assinantes = get_assinantes()
     pmids = buscar_pmids()
     if not pmids:
-        enviar_telegram("Nenhum artigo novo nas últimas 24h.")
+        for user in assinantes:
+            enviar_telegram(user, "Nenhum artigo novo nas últimas 24h.")
     else:
         mensagens = []
         for pmid in pmids:
@@ -80,5 +94,6 @@ if __name__ == "__main__":
                 resumo_pt = "_Resumo não disponível._"
             mensagens.append(f"*{titulo}*\n{resumo_pt}\n🔗 https://pubmed.ncbi.nlm.nih.gov/{pmid}/\n")
         texto = "🧠 *Novos artigos encontrados:*\n\n" + "\n\n".join(mensagens)
-        enviar_telegram(texto)
-    print("✅ Mensagem enviada pelo Telegram!")
+        for user in assinantes:
+            enviar_telegram(user, texto)
+    print("✅ Mensagens enviadas!")
