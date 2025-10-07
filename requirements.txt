@@ -1,2 +1,4 @@
 biopython
 requests
+gspread
+oauth2client
