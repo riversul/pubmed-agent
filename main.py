@@ -7,7 +7,7 @@ Entrez.email = os.getenv("NCBI_EMAIL")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# ----- CONFIGURAÇÃO DA BUSCA -----
+# ----- Configuração da busca -----
 TERMO = (
     '("Intensive Care Units, Pediatric"[MeSH Terms] OR "Intensive Care Units, Neonatal"[MeSH Terms]) '
     'AND ("Critical Illness"[MeSH Terms] OR "Sepsis"[MeSH Terms] OR "Multiple Organ Failure"[MeSH Terms])'
@@ -22,40 +22,49 @@ def buscar_pmids():
         datetype="pdat",
         mindate=ONTEM.strftime("%Y/%m/%d"),
         maxdate=HOJE.strftime("%Y/%m/%d"),
-        retmax=5,  # quantos artigos buscar por dia
+        retmax=5,
         sort="pub+date"
     )
     record = Entrez.read(handle)
     return record.get("IdList", [])
 
 def detalhes_artigo(pmid):
-    """Busca título e abstract do artigo"""
-    handle = Entrez.efetch(db="pubmed", id=pmid, rettype="abstract", retmode="xml")
+    handle = Entrez.efetch(db="pubmed", id=pmid, rettype="xml", retmode="xml")
     records = Entrez.read(handle)
-    artigo = records["PubmedArticle"][0]
-    titulo = artigo["MedlineCitation"]["Article"]["ArticleTitle"]
+    artigo = records["PubmedArticle"][0]["MedlineCitation"]["Article"]
+
+    titulo = artigo.get("ArticleTitle", "Sem título")
     resumo = ""
-    if "Abstract" in artigo["MedlineCitation"]["Article"]:
-        parts = artigo["MedlineCitation"]["Article"]["Abstract"]["AbstractText"]
-        resumo = " ".join(parts)
+    if "Abstract" in artigo and "AbstractText" in artigo["Abstract"]:
+        partes = artigo["Abstract"]["AbstractText"]
+        resumo = " ".join(str(p) for p in partes)
     return titulo, resumo
 
 def traduzir_para_pt(texto):
-    # usa API simples de tradução gratuita (MyMemory)
+    if not texto:
+        return ""
     try:
         resp = requests.get(
             "https://api.mymemory.translated.net/get",
-            params={"q": texto, "langpair": "en|pt"}
+            params={"q": texto, "langpair": "en|pt"},
+            timeout=30
         )
-        data = resp.json()
-        return data["responseData"]["translatedText"]
+        return resp.json().get("responseData", {}).get("translatedText", texto)
     except:
-        return texto  # se falhar, devolve original
+        return texto
 
 def enviar_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    r = requests.post(url, json={"chat_id": CHAT_ID, "text": msg, "disable_web_page_preview": True}, timeout=30)
-    r.raise_for_status()
+    requests.post(
+        url,
+        json={
+            "chat_id": CHAT_ID,
+            "text": msg,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True
+        },
+        timeout=30
+    ).raise_for_status()
 
 if __name__ == "__main__":
     pmids = buscar_pmids()
@@ -65,9 +74,11 @@ if __name__ == "__main__":
         mensagens = []
         for pmid in pmids:
             titulo, resumo = detalhes_artigo(pmid)
-            resumo_pt = traduzir_para_pt(resumo) if resumo else "Sem resumo disponível."
-            mensagens.append(f"**{titulo}**\n{resumo_pt}\n🔗 https://pubmed.ncbi.nlm.nih.gov/{pmid}/\n")
+            if resumo:
+                resumo_pt = traduzir_para_pt(resumo)
+            else:
+                resumo_pt = "_Resumo não disponível._"
+            mensagens.append(f"*{titulo}*\n{resumo_pt}\n🔗 https://pubmed.ncbi.nlm.nih.gov/{pmid}/\n")
         texto = "🧠 *Novos artigos encontrados:*\n\n" + "\n\n".join(mensagens)
-        # O Telegram usa Markdown, então vamos marcar em Markdown simples:
         enviar_telegram(texto)
     print("✅ Mensagem enviada pelo Telegram!")
