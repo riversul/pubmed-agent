@@ -2,7 +2,7 @@ name: PubMed Agent
 
 on:
   schedule:
-    - cron: "0 11 * * *"  # roda todo dia às 08:00 no Brasil (~11:00 UTC)
+    - cron: "0 11 * * *"  # roda todo dia às 10:00 no Brasil (~11:00 UTC)
   workflow_dispatch:  # permite rodar manualmente
 
 jobs:
